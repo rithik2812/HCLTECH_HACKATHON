@@ -1,0 +1,5 @@
+offer_id,offer_name,offer_type,valid_from,valid_to,active,min_tenure_months,min_spend_inr,max_benefit_inr,eligibility_summary
+OFF001,Cashback 5 percent,Cashback,2026-10-01,2026-12-31,True,6,10000,500,Active account; minimum tenure and spend
+OFF002,Bonus points,Points,2026-09-01,2026-11-30,True,3,5000,1000,Minimum tenure and eligible transaction spend
+OFF003,Annual fee waiver,Fee waiver,2026-04-01,2026-10-31,False,12,25000,750,Subject to annual fee waiver policy
+OFF004,New customer welcome benefit,Onboarding,2026-06-01,2026-12-31,True,0,1000,250,New customers only; subject to campaign terms

@@ -1,0 +1,7 @@
+campaign_id,campaign_name,campaign_type,start_date,end_date,approved,max_benefit_inr
+CMP001,Cashback on eligible transactions,Cashback,2026-01-01,2026-12-31,True,500
+CMP002,Bonus reward points,Points,2026-03-01,2026-11-30,True,1000
+CMP003,Annual fee waiver review,Fee waiver,2026-04-01,2026-10-31,False,750
+CMP004,Digital banking engagement offer,Engagement,2026-02-01,2026-12-15,True,0
+CMP005,Loan repayment loyalty benefit,Loan benefit,2026-05-01,2026-12-31,True,300
+CMP006,New customer onboarding offer,Onboarding,2026-06-01,2026-12-31,True,250
