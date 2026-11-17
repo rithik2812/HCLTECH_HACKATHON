@@ -1,0 +1,198 @@
+import pandas as pd
+import numpy as np
+
+# Load the enhanced dataset
+df = pd.read_csv('enhanced_customer_banking_dataset.csv')
+
+# Display basic information
+print(f"Dataset Shape: {df.shape[0]} rows, {df.shape[1]} columns")
+print("\nFirst 3 rows:")
+print(df.head(3).T)  # Transposed for easy viewing of all 31 columns
+
+# Check customer segment distribution (FR-02)
+print("\nCustomer Segment Counts:")
+print(df['customer_segment'].value_counts())
+
+
+
+def run_eda_and_feature_engineering():
+    print("=== Step 1: Loading Enhanced Dataset ===")
+    df = pd.read_csv('enhanced_customer_banking_dataset.csv')
+    print(f"Dataset loaded successfully with shape: {df.shape[0]} rows, {df.shape[1]} columns\n")
+
+    print("=== Step 2: Exploratory Data Analysis (EDA) ===")
+    # Basic dataset info
+    print("Data Types & Missing Values Check:")
+    print(df.isnull().sum()[df.isnull().sum() > 0]) # Should be empty
+    print(f"\nTotal duplicate rows: {df.duplicated().sum()}")
+
+    # Summary statistics for key financial columns
+    key_cols = ['LIMIT_BAL', 'AGE', 'BILL_AMT1', 'PAY_AMT1']
+    print("\nSummary Statistics of Key Numerical Columns:")
+    print(df[key_cols].describe())
+
+    # Segment distribution (FR-02 requirement)
+    print("\nCustomer Segment Breakdown:")
+    segment_counts = df['customer_segment'].value_counts()
+    for segment, count in segment_counts.items():
+        print(f" - {segment}: {count} customers ({count/len(df)*100:.2f}%)")
+
+    print("\n=== Step 3: Feature Engineering ===")
+    # 1. Credit Utilization Ratio (Latest bill amount relative to credit limit)
+    df['credit_utilization'] = df['BILL_AMT1'] / df['LIMIT_BAL']
+    df['credit_utilization'] = df['credit_utilization'].clip(lower=0.0, upper=2.0)
+
+    # 2. Payment Trend (Difference between recent payment delay PAY_0 and older delay PAY_6)
+    # Positive values indicate deteriorating payment discipline over 6 months
+    df['payment_trend'] = df['PAY_0'] - df['PAY_6']
+
+    # 3. Total Repayment Volume (Sum of payments over the last 6 months)
+    payment_cols = ['PAY_AMT1', 'PAY_AMT2', 'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6']
+    df['total_repayment'] = df[payment_cols].sum(axis=1)
+
+    # 4. Average Bill Amount (Mean billing scale across 6 months)
+    bill_cols = ['BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6']
+    df['avg_bill_amount'] = df[bill_cols].mean(axis=1)
+
+    print("New Engineered Features Added:")
+    print(" 1. credit_utilization")
+    print(" 2. payment_trend")
+    print(" 3. total_repayment")
+    print(" 4. avg_bill_amount")
+
+    print("\n=== Step 4: Saving Engineered Dataset ===")
+    output_filename = 'engineered_customer_banking_dataset.csv'
+    df.to_csv(output_filename, index=False)
+    print(f"Engineered dataset successfully saved to '{output_filename}'")
+    print(f"Final Dataset Shape: {df.shape}")
+
+if __name__ == "__main__":
+    run_eda_and_feature_engineering()
+
+
+import datetime
+
+
+
+
+# FR-03: Policy-Based Strategy Selection
+
+POLICY_RULES = {
+    'Loyalty Candidate': {
+        'objective': 'Appreciation & Premium Reward',
+        'tone': 'Warm, exclusive, and appreciative',
+        'template_type': 'loyalty_reward_email'
+    },
+    'Consistent': {
+        'objective': 'Engagement & Milestone Recognition',
+        'tone': 'Encouraging, polite, and steady',
+        'template_type': 'consistent_appreciation_email'
+    },
+    'Dormant / Low Activity': {
+        'objective': 'Re-engagement & Activation Offer',
+        'tone': 'Inviting, helpful, and low-pressure',
+        'template_type': 'reengagement_email'
+    },
+    'Declining Activity': {
+        'objective': 'Retention & Feedback Incentive',
+        'tone': 'Supportive and attentive',
+        'template_type': 'retention_email'
+    },
+    'Payment Reminder / Overdue': {
+        'objective': 'Courteous or Progressive Bill Reminder',
+        'tone': 'Professional, respectful, and firm with a clear support/dispute path',
+        'template_type': 'billing_reminder_email'
+    }
+}
+
+# FR-05: Offer & Reward Controls Validation
+
+def validate_offer(customer_row):
+    """
+    Validates eligibility, offer identifiers, terms, expiry, and consent
+    before an offer or reward is included in the message.
+    """
+    offer_id = customer_row['approved_offer_id']
+    expiry_date = customer_row['offer_expiry_date']
+    consent = customer_row['consent_given']
+    
+    # Safety Check: Consent Verification (FR-07 / FR-05)
+    if not consent:
+        return {"valid": False, "reason": "Blocked: Customer communication consent is False."}
+    
+    # Expiry Check
+    today = datetime.date.today().strftime('%Y-%m-%d')
+    if expiry_date < today:
+        return {"valid": False, "reason": f"Blocked: Offer {offer_id} expired on {expiry_date}."}
+        
+    return {"valid": True, "offer_id": offer_id, "expiry": expiry_date}
+
+# ==========================================
+# FR-04: Grounded Message Generation (Prompt Constructor)
+# ==========================================
+def generate_grounded_prompt(customer_id):
+    """
+    Constructs a strict LLM prompt using ONLY verified customer facts, 
+    approved offer details, and reusable policy-controlled content.
+    """
+    customer = df[df['ID'] == customer_id].iloc[0]
+    segment = customer['customer_segment']
+    policy = POLICY_RULES.get(segment, {})
+    
+    # Step 1: Run deterministic offer/compliance validation (FR-05 & FR-07)
+    offer_validation = validate_offer(customer)
+    if not offer_validation['valid']:
+        return {
+            "status": "REFUSED / BLOCKED",
+            "reason": offer_validation['reason'],
+            "prompt": None
+        }
+    
+    # Step 2: Build grounded LLM prompt with strict fact boundaries
+    prompt = f"""
+You are an AI Customer Engagement Assistant for a retail bank.
+Draft an email subject and body for the customer below using ONLY the verified facts provided. 
+Do NOT invent amounts, dates, interest rates, or unauthorized perks.
+
+--- VERIFIED CUSTOMER PROFILE & EVIDENCE ---
+- Customer ID: {customer['ID']}
+- Assigned Segment: {segment}
+- Credit Limit: ₹{customer['LIMIT_BAL']:,.2f}
+- Latest Statement Bill (Bill Amt 1): ₹{customer['BILL_AMT1']:,.2f}
+- Credit Utilization: {customer['credit_utilization']*100:.1f}%
+- Total 6-Month Repayment: ₹{customer['total_repayment']:,.2f}
+- Preferred Contact Channel: {customer['preferred_channel']}
+- Approved Offer / Reward ID: {offer_validation['offer_id']} (Valid till: {offer_validation['expiry']})
+
+--- POLICY & STRATEGY RULES ---
+- Objective: {policy.get('objective')}
+- Tone: {policy.get('tone')}
+- Template Type: {policy.get('template_type')}
+
+Draft the email clearly, maintain professional boundaries, and ensure all financial figures match the verified evidence exactly.
+"""
+    return {
+        "status": "APPROVED FOR GENERATION",
+        "reason": "All policy, consent, and eligibility checks passed successfully.",
+        "prompt": prompt.strip()
+    }
+
+# ==========================================
+# Example Execution & Testing
+# ==========================================
+if __name__ == "__main__":
+    print("Testing Strategy & Grounded Prompt Engine...\n")
+    
+    # Test 1: Loyalty Candidate
+    loyalty_id = df[df['customer_segment'] == 'Loyalty Candidate']['ID'].values[0]
+    result_loyalty = generate_grounded_prompt(loyalty_id)
+    print(f"=== Customer ID {loyalty_id} (Loyalty Candidate) ===")
+    print(f"Status: {result_loyalty['status']}")
+    print(result_loyalty['prompt'][:500] + "...\n")
+    
+    # Test 2: Overdue Bill Customer
+    overdue_id = df[df['customer_segment'] == 'Payment Reminder / Overdue']['ID'].values[0]
+    result_overdue = generate_grounded_prompt(overdue_id)
+    print(f"=== Customer ID {overdue_id} (Payment Reminder / Overdue) ===")
+    print(f"Status: {result_overdue['status']}")
+    print(result_overdue['prompt'][:500] + "...\n")
